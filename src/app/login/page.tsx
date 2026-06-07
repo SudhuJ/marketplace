@@ -22,9 +22,31 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [checking, setChecking] = useState(true);
+
   useEffect(() => {
-    clearSupabaseAuth();
-  }, []);
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          router.push("/");
+          return;
+        }
+      } catch {
+      }
+      await clearSupabaseAuth();
+      setChecking(false);
+    };
+    checkSession();
+  }, [router]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <div className="animate-spin rounded-full border-t-2 border-b-2 border-zinc-200 w-12 h-12" />
+      </div>
+    );
+  }
 
   const handleAuth = async (action: "login" | "signup") => {
     setLoading(true);

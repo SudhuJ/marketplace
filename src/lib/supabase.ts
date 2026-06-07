@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables'
+  )
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -9,14 +15,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
   },
+  global: {
+    fetch: (url, options) =>
+      fetch(url, { ...options, signal: AbortSignal.timeout(10000) }),
+  },
 })
 
-// Helper to clear all Supabase auth state from storage
 export const clearSupabaseAuth = async () => {
   try {
     await supabase.auth.signOut()
   } catch {
-    // signOut may fail if tokens are already invalid — ignore
   }
   if (typeof window !== 'undefined') {
     const keys = Object.keys(localStorage).filter(k => k.startsWith('sb-'))

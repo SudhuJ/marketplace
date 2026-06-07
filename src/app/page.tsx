@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase, clearSupabaseAuth } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { useDebounce } from "@/hooks/useDebounce";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -31,6 +32,7 @@ export default function MarketplacePage() {
   const [listings, setListings] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 300);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [minPrice, setMinPrice] = useState<number | null>(null);
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
@@ -104,8 +106,8 @@ export default function MarketplacePage() {
           .eq("is_sold", false);
 
         // Apply filters
-        if (searchTerm) {
-          query = query.ilike("title", `%${searchTerm}%`);
+        if (debouncedSearch) {
+          query = query.ilike("title", `%${debouncedSearch}%`);
         }
 
         if (selectedCategory) {
@@ -151,7 +153,7 @@ export default function MarketplacePage() {
     if (user) {
       fetchData();
     }
-  }, [user, searchTerm, selectedCategory, minPrice, maxPrice, sortBy, router]);
+  }, [user, debouncedSearch, selectedCategory, minPrice, maxPrice, sortBy, router]);
 
   // Handle creating a new listing
   const handleCreateListing = async () => {

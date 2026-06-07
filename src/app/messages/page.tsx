@@ -69,7 +69,7 @@ export default function MessagesPage() {
     <div className="min-h-screen bg-zinc-950">
       <header className="bg-zinc-900/50 backdrop-blur-sm border-b border-zinc-800">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push("/")} className="text-zinc-400 hover:text-zinc-200">
+          <Button variant="ghost" onClick={() => router.back()} className="text-zinc-400 hover:text-zinc-200">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-xl font-medium text-zinc-100">Messages</h1>

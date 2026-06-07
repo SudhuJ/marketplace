@@ -77,6 +77,39 @@ export default function ConversationPage() {
     load();
   }, [listingId, otherUserId, router]);
 
+  // Realtime subscription for new messages
+  useEffect(() => {
+    if (!user || !otherUserId || !listingId) return;
+
+    const channel = supabase
+      .channel(`messages:${listingId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `listing_id=eq.${listingId}`,
+        },
+        (payload) => {
+          const msg = payload.new as any;
+          if (msg.recipient_id === user.id && msg.sender_id === otherUserId) {
+            setMessages((prev) => [...prev, msg]);
+            supabase
+              .from("messages")
+              .update({ read_at: new Date().toISOString() })
+              .eq("id", msg.id)
+              .then();
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, otherUserId, listingId]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -120,7 +153,7 @@ export default function ConversationPage() {
     <div className="min-h-screen bg-zinc-950 flex flex-col">
       <header className="bg-zinc-900/50 backdrop-blur-sm border-b border-zinc-800">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Button variant="ghost" onClick={() => router.push("/messages")} className="text-zinc-400 hover:text-zinc-200 p-0">
+          <Button variant="ghost" onClick={() => router.back()} className="text-zinc-400 hover:text-zinc-200 p-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 text-sm font-medium">

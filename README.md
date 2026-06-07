@@ -1,6 +1,8 @@
 # Vapor Engine — Second-Hand Marketplace
 
-A modern, lightweight alternative to Craigslist built with Next.js 16, React 19, and Supabase.
+A modern, lightweight alternative to Craigslist — live at [equitarium.vercel.app](https://equitarium.vercel.app/).
+
+Built with Next.js 16, React 19, and Supabase. No custom backend — all data flows client-to-Supabase with RLS enforcement.
 
 ## Tech Stack
 
@@ -103,24 +105,27 @@ A modern, lightweight alternative to Craigslist built with Next.js 16, React 19,
 
 ## Design Decisions
 
-### Supabase (no custom backend)
-All data flows client-to-Supabase directly via the typed JS client. RLS provides auth enforcement at the database level. This eliminated the need for Express/Fastify or API routes, drastically reducing build time. For production scale, an API layer would be added.
+### Why no custom backend
+I chose Supabase as the sole backend because its Row Level Security lets me enforce authorization at the database level without writing API routes. The typed JS client (`supabase-js`) handles all reads and writes directly from the browser. This eliminated the need for Express, Fastify, or Next.js API routes, which drastically reduced build time. For a production marketplace handling sensitive transactions, I would add an API layer for rate limiting, image moderation, and write validation.
 
 ### Server Components + Client Islands
-The home page is a server component shell; the interactive listing grid is a client component with React Query. This gives SSR for initial render and smaller client bundles.
+The home page is a server component shell that renders the initial HTML immediately. Only the interactive listing grid is a client component with React Query. This gives me SSR for first paint and keeps the client bundle small.
 
 ### Realtime over Polling
-Messages use Supabase Realtime channels instead of polling. The messages table has Realtime enabled, and the subscription listens for INSERT events filtered by `listing_id`.
+Messages use Supabase Realtime channels instead of polling. The `messages` table has Realtime enabled via the `supabase_realtime` publication, and each conversation subscribes to INSERT events filtered by `listing_id`. This gives instant delivery with zero polling overhead.
 
 ### Optimistic Updates
-Message sending optimistically adds the message to the UI, with automatic rollback on error. The Realtime subscription deduplicates via a `knownIds` Set.
+When you send a message, I insert it optimistically into the UI with a `temp-*` ID. If the Supabase insert succeeds, the Realtime subscription delivers the real row and replaces the temp message. If it fails, the temp message is removed and the error is logged. This makes the chat feel instant.
+
+### Typed Supabase Client
+I generate TypeScript types from the Supabase schema with `supabase gen types` and use them in `createClient<Database>()`. This gives full autocompletion for all tables, columns, join shapes, and filter operators — and catches schema mismatches at build time.
 
 ## Assumptions Made
 
-1. **Auth-first**: All pages redirect to login if unauthenticated. Assumes the platform is private/semi-private.
+1. **Auth-first**: All pages redirect to login if unauthenticated. I assume the platform is private/semi-private rather than a public classifieds site.
 2. **Condition system**: Uses `new`, `like new`, `good`, `fair`, `poor` — standard used-goods categories.
 3. **Image storage**: Supabase Storage with public buckets. In a production marketplace, images would need moderation and CDN optimization.
-4. **No payment**: Money changes hands off-platform. The marketplace is a listing + connection service.
+4. **No payment**: Money changes hands off-platform. The marketplace is a listing + connection service only.
 5. **No admin panel**: Moderation, reporting, and user management are not implemented.
 
 ## Getting Started

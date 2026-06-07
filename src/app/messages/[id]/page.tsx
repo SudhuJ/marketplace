@@ -83,7 +83,7 @@ export default function ConversationPage() {
     load();
   }, [listingId, otherUserId, router]);
 
-  // Supabase Realtime — replaces polling
+  // Supabase Realtime — instant delivery
   useEffect(() => {
     if (!user || !otherUserId || !listingId) return;
 
@@ -107,7 +107,20 @@ export default function ConversationPage() {
           if (!isRelevant) return;
 
           knownIds.current.add(newMsg.id);
-          setMessages(prev => [...prev, newMsg]);
+
+          // Replace any matching optimistic message (temp ID) with the real one
+          setMessages(prev => {
+            const withoutOptimistic = prev.filter(
+              m => !(
+                m.id.startsWith("temp-") &&
+                m.sender_id === newMsg.sender_id &&
+                m.recipient_id === newMsg.recipient_id &&
+                m.content === newMsg.content &&
+                m.listing_id === newMsg.listing_id
+              ),
+            );
+            return [...withoutOptimistic, newMsg];
+          });
 
           if (newMsg.recipient_id === user.id && !newMsg.read_at) {
             supabase

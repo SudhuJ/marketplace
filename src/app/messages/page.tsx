@@ -22,7 +22,7 @@ export default function MessagesPage() {
         // Get all messages grouped by the other participant
         const { data: messages } = await supabase
           .from("messages")
-          .select("*, listings!inner(id, title), sender:profiles!sender_id(full_name), recipient:profiles!recipient_id(full_name)")
+          .select("*, listings(id, title), sender:profiles!sender_id(full_name), recipient:profiles!recipient_id(full_name)")
           .or(`sender_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
           .order("created_at", { ascending: false });
 

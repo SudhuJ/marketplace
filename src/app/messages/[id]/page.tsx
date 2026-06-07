@@ -77,37 +77,49 @@ export default function ConversationPage() {
     load();
   }, [listingId, otherUserId, router]);
 
-  // Realtime subscription for new messages
+  // Poll for new messages every 3s as a reliable fallback
   useEffect(() => {
     if (!user || !otherUserId || !listingId) return;
 
-    const channel = supabase
-      .channel(`messages:${listingId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `listing_id=eq.${listingId}`,
-        },
-        (payload) => {
-          const msg = payload.new as any;
-          if (msg.recipient_id === user.id && msg.sender_id === otherUserId) {
-            setMessages((prev) => [...prev, msg]);
+    const knownIds = new Set<string>();
+    let lastPollAt: string | undefined;
+
+    const poll = async () => {
+      let query = supabase
+        .from("messages")
+        .select("*")
+        .eq("listing_id", listingId)
+        .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`);
+
+      if (lastPollAt) {
+        query = query.gt("created_at", lastPollAt);
+      }
+
+      const { data } = await query.order("created_at", { ascending: true });
+      if (data) {
+        const newMsgs = data.filter((m) => !knownIds.has(m.id));
+        if (newMsgs.length > 0) {
+          newMsgs.forEach((m) => {
+            knownIds.add(m.id);
+            if (m.created_at > (lastPollAt || "")) lastPollAt = m.created_at;
+          });
+          setMessages((prev) => [...prev, ...newMsgs]);
+          const unread = newMsgs.filter(
+            (m) => m.recipient_id === user.id && !m.read_at,
+          );
+          if (unread.length > 0) {
             supabase
               .from("messages")
               .update({ read_at: new Date().toISOString() })
-              .eq("id", msg.id)
+              .in("id", unread.map((m) => m.id))
               .then();
           }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
+        }
+      }
     };
+
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
   }, [user, otherUserId, listingId]);
 
   useEffect(() => {

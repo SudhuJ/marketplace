@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Send } from "lucide-react";
 import { Avatar } from "@/components/avatar";
+import type { Tables } from "@/lib/database.types";
+
+type Message = Tables<"messages">;
 
 export default function ConversationPage() {
   const router = useRouter();
@@ -15,16 +18,18 @@ export default function ConversationPage() {
   const otherUserId = searchParams.get("other");
 
   const [user, setUser] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [listing, setListing] = useState<any>(null);
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const knownIds = useRef(new Set<string>());
 
   const listingId = params.id;
 
+  // Initial load
   useEffect(() => {
     const load = async () => {
       try {
@@ -48,7 +53,6 @@ export default function ConversationPage() {
           setOtherUser(profileData);
         }
 
-        // Fetch messages for this listing between the two users
         if (otherUserId) {
           const { data: msgData } = await supabase
             .from("messages")
@@ -56,10 +60,11 @@ export default function ConversationPage() {
             .eq("listing_id", listingId)
             .or(`and(sender_id.eq.${session.user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${session.user.id})`)
             .order("created_at", { ascending: true });
-          setMessages(msgData || []);
+          const msgs = (msgData || []) as Message[];
+          setMessages(msgs);
+          msgs.forEach(m => knownIds.current.add(m.id));
 
-          // Mark unread messages as read
-          const unreadIds = (msgData || [])
+          const unreadIds = msgs
             .filter(m => m.recipient_id === session.user.id && !m.read_at)
             .map(m => m.id);
           if (unreadIds.length > 0) {
@@ -78,49 +83,46 @@ export default function ConversationPage() {
     load();
   }, [listingId, otherUserId, router]);
 
-  // Poll for new messages every 3s as a reliable fallback
+  // Supabase Realtime — replaces polling
   useEffect(() => {
     if (!user || !otherUserId || !listingId) return;
 
-    const knownIds = new Set<string>();
-    let lastPollAt: string | undefined;
+    const channel = supabase
+      .channel(`messages:${listingId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `listing_id=eq.${listingId}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as Message | undefined;
+          if (!newMsg || knownIds.current.has(newMsg.id)) return;
 
-    const poll = async () => {
-      let query = supabase
-        .from("messages")
-        .select("*")
-        .eq("listing_id", listingId)
-        .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`);
+          const isRelevant =
+            (newMsg.sender_id === user.id && newMsg.recipient_id === otherUserId) ||
+            (newMsg.sender_id === otherUserId && newMsg.recipient_id === user.id);
+          if (!isRelevant) return;
 
-      if (lastPollAt) {
-        query = query.gt("created_at", lastPollAt);
-      }
+          knownIds.current.add(newMsg.id);
+          setMessages(prev => [...prev, newMsg]);
 
-      const { data } = await query.order("created_at", { ascending: true });
-      if (data) {
-        const newMsgs = data.filter((m) => !knownIds.has(m.id));
-        if (newMsgs.length > 0) {
-          newMsgs.forEach((m) => {
-            knownIds.add(m.id);
-            if (m.created_at > (lastPollAt || "")) lastPollAt = m.created_at;
-          });
-          setMessages((prev) => [...prev, ...newMsgs]);
-          const unread = newMsgs.filter(
-            (m) => m.recipient_id === user.id && !m.read_at,
-          );
-          if (unread.length > 0) {
+          if (newMsg.recipient_id === user.id && !newMsg.read_at) {
             supabase
               .from("messages")
               .update({ read_at: new Date().toISOString() })
-              .in("id", unread.map((m) => m.id))
+              .eq("id", newMsg.id)
               .then();
           }
-        }
-      }
-    };
+        },
+      )
+      .subscribe();
 
-    const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, otherUserId, listingId]);
 
   useEffect(() => {
@@ -130,25 +132,34 @@ export default function ConversationPage() {
   const sendMessage = async () => {
     if (!content.trim() || !user || !otherUserId || !listingId) return;
     setSending(true);
+    const text = content.trim();
+    setContent("");
+
+    // Optimistic insert
+    const optimistic: Message = {
+      id: `temp-${Date.now()}`,
+      listing_id: listingId,
+      sender_id: user.id,
+      recipient_id: otherUserId,
+      content: text,
+      created_at: new Date().toISOString(),
+      read_at: null,
+    };
+    knownIds.current.add(optimistic.id);
+    setMessages(prev => [...prev, optimistic]);
+
     try {
       const { error } = await supabase.from("messages").insert({
         listing_id: listingId,
         sender_id: user.id,
         recipient_id: otherUserId,
-        content: content.trim(),
+        content: text,
       });
       if (error) throw error;
-      setMessages(prev => [...prev, {
-        id: `temp-${Date.now()}`,
-        listing_id: listingId,
-        sender_id: user.id,
-        recipient_id: otherUserId,
-        content: content.trim(),
-        created_at: new Date().toISOString(),
-      }]);
-      setContent("");
     } catch (err) {
       console.error(err);
+      knownIds.current.delete(optimistic.id);
+      setMessages(prev => prev.filter(m => m.id !== optimistic.id));
     } finally {
       setSending(false);
     }
@@ -191,7 +202,7 @@ export default function ConversationPage() {
                   isMine ? "bg-zinc-200 text-zinc-900" : "bg-zinc-800 text-zinc-200"
                 }`}>
                   <p>{msg.content}</p>
-                  <div className={`text-xs mt-1 ${isMine ? "text-zinc-500" : "text-zinc-500"}`}>
+                  <div className="text-xs mt-1 text-zinc-500">
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {msg.read_at && isMine && <span className="ml-2">✓ Read</span>}
                   </div>
@@ -208,7 +219,7 @@ export default function ConversationPage() {
           <Input
             value={content}
             onChange={e => setContent(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && sendMessage()}
+            onKeyDown={e => e.key === "Enter" && !sending && sendMessage()}
             placeholder="Type a message..."
             className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200"
           />

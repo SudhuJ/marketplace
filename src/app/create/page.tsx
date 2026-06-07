@@ -8,13 +8,9 @@ import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 export default function CreateListingPage() {
   const router = useRouter();
@@ -31,15 +27,13 @@ export default function CreateListingPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
 
-  // Fetch categories on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const fetchCategories = async () => {
       try {
         const { data } = await supabase.from('categories').select('*');
         if (data) setCategories(data);
-      } catch (err) {
-        console.error('Error fetching categories:', err);
+      } catch (_err) {
+        console.error('Error fetching categories:', _err);
       }
     };
     
@@ -51,7 +45,7 @@ export default function CreateListingPage() {
     for (const file of imageFiles) {
       const ext = file.name.split('.').pop();
       const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('listing-images')
         .upload(path, file);
       if (error) throw error;

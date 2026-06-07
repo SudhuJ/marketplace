@@ -10,7 +10,6 @@ import { Avatar } from "@/components/avatar";
 export default function MessagesPage() {
   const router = useRouter();
   const [conversations, setConversations] = useState<any[]>([]);
-  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,14 +17,14 @@ export default function MessagesPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) { await clearSupabaseAuth(); router.push("/login"); return; }
-        setUser(session.user);
 
         // Get all messages grouped by the other participant
-        const { data: messages } = await supabase
+        const messagesResult = await supabase
           .from("messages")
           .select("*, listings(id, title), sender:profiles!sender_id(full_name, avatar_url), recipient:profiles!recipient_id(full_name, avatar_url)")
           .or(`sender_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
           .order("created_at", { ascending: false });
+        const messages = messagesResult.data as any[];
 
         if (messages) {
           const convMap = new Map();

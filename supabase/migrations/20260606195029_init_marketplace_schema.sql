@@ -92,7 +92,7 @@ create policy "Listings are deletable by owners"
 -- Sender must be authenticated, recipient can be anyone, but we restrict to listing participants for simplicity
 create policy "Messages are insertable by authenticated users"
   on messages for insert
-  with check (auth.role() = 'authenticated');
+  with check (auth.uid() = sender_id);
 
 create policy "Messages are viewable by participants"
   on messages for select

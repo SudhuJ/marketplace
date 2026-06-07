@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Save, Heart, Package } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 
@@ -23,7 +22,6 @@ export default function ProfilePage() {
   const [location, setLocation] = useState("");
   const [website, setWebsite] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [tab, setTab] = useState<"listings" | "favorites">("listings");
   const [loading, setLoading] = useState(true);
 
@@ -34,11 +32,13 @@ export default function ProfilePage() {
         if (!session?.user) { await clearSupabaseAuth(); router.push("/login"); return; }
         setUser(session.user);
 
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .single();
+        // All three queries are independent — run in parallel
+        const [{ data: profileData }, { data: listingsData }, { data: favsData }] = await Promise.all([
+          supabase.from("profiles").select("*").eq("id", session.user.id).single(),
+          supabase.from("listings").select("*, categories(name)").eq("user_id", session.user.id).order("created_at", { ascending: false }),
+          supabase.from("favorites").select("*, listings!inner(*, categories!inner(name))").eq("user_id", session.user.id),
+        ]);
+
         setProfile(profileData);
         if (profileData) {
           setFullName(profileData.full_name || "");
@@ -46,18 +46,7 @@ export default function ProfilePage() {
           setLocation(profileData.location || "");
           setWebsite(profileData.website || "");
         }
-
-        const { data: listingsData } = await supabase
-          .from("listings")
-          .select("*, categories(name)")
-          .eq("user_id", session.user.id)
-          .order("created_at", { ascending: false });
         setListings(listingsData || []);
-
-        const { data: favsData } = await supabase
-          .from("favorites")
-          .select("*, listings!inner(*, categories!inner(name))")
-          .eq("user_id", session.user.id);
         setFavorites(favsData || []);
       } catch (err) {
         console.error(err);
@@ -73,7 +62,6 @@ export default function ProfilePage() {
     let avatarUrl = profile?.avatar_url;
 
     if (avatarFile) {
-      setUploadingAvatar(true);
       const ext = avatarFile.name.split(".").pop();
       const path = `${user.id}/avatar.${ext}`;
       const { error: uploadError } = await supabase.storage
@@ -84,7 +72,6 @@ export default function ProfilePage() {
         .from("avatars")
         .getPublicUrl(path);
       avatarUrl = publicUrl;
-      setUploadingAvatar(false);
     }
 
     await supabase.from("profiles").upsert({

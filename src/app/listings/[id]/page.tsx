@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { supabase, clearSupabaseAuth } from "@/lib/supabase";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Heart, MessageCircle, ArrowLeft, Trash2, Edit3, CheckCircle, XCircle } from "lucide-react";
+import { Heart, MessageCircle, ArrowLeft, Trash2, Edit3, XCircle } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import {
   Dialog,
@@ -47,19 +47,12 @@ export default function ListingDetailPage() {
         if (listingError) throw listingError;
         setListing(listingData);
 
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", listingData.user_id)
-          .single();
+        // Profile and favorites are independent — run in parallel
+        const [{ data: profileData }, { data: favData }] = await Promise.all([
+          supabase.from("profiles").select("*").eq("id", listingData.user_id).single(),
+          supabase.from("favorites").select("id").eq("user_id", session.user.id).eq("listing_id", params.id).maybeSingle(),
+        ]);
         setSeller(profileData);
-
-        const { data: favData } = await supabase
-          .from("favorites")
-          .select("id")
-          .eq("user_id", session.user.id)
-          .eq("listing_id", params.id)
-          .maybeSingle();
         setIsFavorited(!!favData);
       } catch (err: any) {
         setError(err.message);
@@ -69,6 +62,13 @@ export default function ListingDetailPage() {
     };
     load();
   }, [params.id, router]);
+
+  // Dynamic page title for SEO
+  useEffect(() => {
+    if (listing?.title) {
+      document.title = `${listing.title} — Vapor Engine`;
+    }
+  }, [listing]);
 
   const toggleFavorite = async () => {
     if (!user || !listing) return;
@@ -93,11 +93,14 @@ export default function ListingDetailPage() {
   };
 
   const handleToggleSold = async () => {
-    const updates: Record<string, any> = { is_sold: !listing.is_sold };
-    if (!listing.is_sold) updates.sold_at = new Date().toISOString();
-    else updates.sold_at = null;
-    await supabase.from("listings").update(updates).eq("id", listing.id);
-    setListing({ ...listing, ...updates });
+    await supabase
+      .from("listings")
+      .update({
+        is_sold: !listing.is_sold,
+        sold_at: listing.is_sold ? null : new Date().toISOString(),
+      })
+      .eq("id", listing.id);
+    setListing({ ...listing, is_sold: !listing.is_sold, sold_at: listing.is_sold ? null : new Date().toISOString() });
   };
 
   const handleContact = () => {

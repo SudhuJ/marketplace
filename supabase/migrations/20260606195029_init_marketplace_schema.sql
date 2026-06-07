@@ -1,18 +1,30 @@
 -- Create extensions
-create extension if not exists "uuid-ossp";
+create extension if not exists "moddatetime" with schema extensions;
 
 -- Create categories table for listings
 create table categories (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text not null unique,
   description text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- Create profiles table to extend auth.users with additional info
+create table profiles (
+  id uuid primary key references auth.users on delete cascade,
+  full_name text,
+  avatar_url text,
+  bio text,
+  website text,
+  location text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- Create listings table
 create table listings (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users not null,
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) not null,
   title text not null,
   description text,
   price decimal(10,2) not null check (price >= 0),
@@ -27,25 +39,13 @@ create table listings (
 
 -- Create messages table for inquiries
 create table messages (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   listing_id uuid references listings on delete cascade not null,
   sender_id uuid references auth.users not null,
   recipient_id uuid references auth.users not null,
   content text not null,
   read_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- Create profiles table to extend auth.users with additional info
-create table profiles (
-  id uuid primary key references auth.users on delete cascade,
-  full_name text,
-  avatar_url text,
-  bio text,
-  website text,
-  location text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- Enable Row Level Security
@@ -71,10 +71,10 @@ create policy "Categories are deletable by authenticated users"
   on categories for delete
   using (auth.role() = 'authenticated');
 
--- Policies for listings: anyone can view active listings, users can manage their own
+-- Policies for listings: anyone can view active listings, owners can view their own sold listings
 create policy "Listings are viewable by everyone"
   on listings for select
-  using (is_sold = false);
+  using (is_sold = false or auth.uid() = user_id);
 
 create policy "Listings are insertable by authenticated users"
   on listings for insert
@@ -98,10 +98,10 @@ create policy "Messages are viewable by participants"
   on messages for select
   using (auth.uid() = sender_id or auth.uid() = recipient_id);
 
--- Policies for profiles: users can view their own profile, update their own
-create policy "Profiles are viewable by owners"
+-- Policies for profiles: anyone can view profiles, only owners can update
+create policy "Profiles are viewable by everyone"
   on profiles for select
-  using (auth.uid() = id);
+  using (true);
 
 create policy "Profiles are insertable by owners"
   on profiles for insert
@@ -127,11 +127,11 @@ on conflict (name) do nothing;
 create trigger update_listings_updated_at
   before update on listings
   for each row
-  execute function moddatetime($$updated_at$$);
+  execute function extensions.moddatetime($$updated_at$$);
 
 create trigger update_profiles_updated_at
   before update on profiles
   for each row
-  execute function moddatetime($$updated_at$$);
+  execute function extensions.moddatetime($$updated_at$$);
 
 -- Note: Supabase already includes moddatetime function via extensions

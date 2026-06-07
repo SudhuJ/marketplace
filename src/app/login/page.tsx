@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase, clearSupabaseAuth } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,19 +15,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-  // Helper to check if we're using mock Supabase
-  const useMockSupabase = () => {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    return supabaseUrl.includes("127.0.0.1:54321");
-  };
-
-  // Clear mock session helper
-  const clearMockSession = () => {
-    // In mock mode, we just reset the mockUser in supabase client
-    // Since we can't directly access it, we'll sign out which does the same
-    supabase.auth.signOut();
-  };
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -35,20 +22,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Clear any invalid session on mount
-  // This helps with the "Invalid Refresh Token" error
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const clearInvalidSession = async () => {
-      try {
-        await supabase.auth.signOut();
-      } catch (err) {
-        // Ignore errors during signOut
-      }
-    };
-    
-    // Clear session on initial load to avoid invalid token issues
-    clearInvalidSession();
+    clearSupabaseAuth();
   }, []);
 
   const handleAuth = async (action: "login" | "signup") => {
@@ -62,39 +37,19 @@ export default function LoginPage() {
           password,
         });
         if (signUpError) throw signUpError;
-        
-        // For mock Supabase, simulate email confirmation
-        if (useMockSupabase()) {
-          alert("Mock sign up successful! In a real app, check your email for confirmation.");
-          // Auto-login for demo purposes in mock mode - session is handled automatically
-          router.push("/");
-          router.refresh();
-        } else {
-          alert(
-            "Check your email for the confirmation link! (In local dev, check the terminal)",
-          );
-        }
+        router.push("/");
+        router.refresh();
       } else {
-        const { error: signInError, data } = await supabase.auth.signInWithPassword({
+        const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (signInError) throw signInError;
-
-        // Success! Redirect to the marketplace grid
         router.push("/");
         router.refresh();
       }
     } catch (err: any) {
-      // Handle specific Supabase auth errors
-      if (err.message?.includes("Invalid Refresh Token")) {
-        // Clear the invalid session and try again
-        await supabase.auth.signOut();
-        clearMockSession();
-        setError("Your session has expired. Please try logging in again.");
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }

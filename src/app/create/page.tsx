@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, clearSupabaseAuth } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,9 @@ export default function CreateListingPage() {
   const [categoryId, setCategoryId] = useState("");
   const [condition, setCondition] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
@@ -44,34 +46,48 @@ export default function CreateListingPage() {
     fetchCategories();
   }, []);
 
+  const uploadImages = async (userId: string): Promise<string[]> => {
+    const urls: string[] = [];
+    for (const file of imageFiles) {
+      const ext = file.name.split('.').pop();
+      const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data, error } = await supabase.storage
+        .from('listing-images')
+        .upload(path, file);
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage
+        .from('listing-images')
+        .getPublicUrl(path);
+      urls.push(publicUrl);
+    }
+    return urls;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSubmitting(true);
     setError(null);
     setSuccess(null);
 
     try {
-      // Get current user session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
-        throw new Error("You must be logged in to create a listing");
+        await clearSupabaseAuth();
+        router.push("/login");
+        return;
       }
 
-      // Validate required fields
-      if (!title.trim()) {
-        throw new Error("Title is required");
-      }
-      
+      if (!title.trim()) throw new Error("Title is required");
       const priceNum = parseFloat(price);
-      if (isNaN(priceNum) || priceNum < 0) {
-        throw new Error("Please enter a valid price");
-      }
-      
-      if (!categoryId) {
-        throw new Error("Please select a category");
+      if (isNaN(priceNum) || priceNum < 0) throw new Error("Please enter a valid price");
+      if (!categoryId) throw new Error("Please select a category");
+
+      let imageUrls = images;
+      if (imageFiles.length > 0) {
+        setUploading(true);
+        imageUrls = await uploadImages(session.user.id);
       }
 
-      // Create the listing
       const { error: listingError } = await supabase
         .from('listings')
         .insert({
@@ -81,7 +97,7 @@ export default function CreateListingPage() {
           price: priceNum,
           category_id: categoryId,
           condition: condition || null,
-          images: images.length > 0 ? images : [],
+          images: imageUrls,
           is_sold: false
         });
 
@@ -97,8 +113,8 @@ export default function CreateListingPage() {
       setCategoryId("");
       setCondition("");
       setImages([]);
+      setImageFiles([]);
       
-      // Redirect to homepage after a brief delay
       setTimeout(() => {
         router.push("/");
         router.refresh();
@@ -106,16 +122,16 @@ export default function CreateListingPage() {
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
+      setUploading(false);
     }
   };
 
-  // Handle image input (simplified - in a real app you'd use upload handling)
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // In a real app, you would upload this to Supabase Storage
-      // For demo purposes, we'll just use a placeholder
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      setImageFiles(prev => [...prev, file]);
       const reader = new FileReader();
       reader.onload = (event) => {
         setImages(prev => [...prev, event.target?.result as string]);
@@ -248,6 +264,7 @@ export default function CreateListingPage() {
                 <input
                   type="file"
                   accept="image/*"
+                  multiple
                   onChange={handleImageChange}
                   className="block w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700"
                 />
@@ -278,18 +295,15 @@ export default function CreateListingPage() {
                 )}
               </div>
             </div>
+            <Button
+              className="w-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium"
+              type="submit"
+              disabled={submitting}
+            >
+              {uploading ? "Uploading images..." : submitting ? "Creating..." : "Create Listing"}
+            </Button>
           </form>
         </CardContent>
-        
-        <CardFooter className="pt-4">
-          <Button
-            className="w-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 font-medium"
-            type="submit"
-            disabled={loading}
-          >
-            {loading ? "Creating..." : "Create Listing"}
-          </Button>
-        </CardFooter>
       </Card>
     </main>
   );

@@ -100,7 +100,7 @@ export default function ListingDetailPage() {
   };
 
   const handleContact = () => {
-    router.push(`/messages/new?seller=${listing.user_id}&listing=${listing.id}`);
+    router.push(`/messages/${listing.id}?other=${listing.user_id}`);
   };
 
   if (loading) {

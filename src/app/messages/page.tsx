@@ -18,19 +18,32 @@ export default function MessagesPage() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) { await clearSupabaseAuth(); router.push("/login"); return; }
 
-        // Get all messages grouped by the other participant
+        // Fetch messages (no direct FK from messages.sender_id to profiles,
+        // so we fetch profiles separately instead of using a join)
         const messagesResult = await supabase
           .from("messages")
-          .select("*, listings(id, title), sender:profiles!sender_id(full_name, avatar_url), recipient:profiles!recipient_id(full_name, avatar_url)")
+          .select("*, listings(id, title)")
           .or(`sender_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
           .order("created_at", { ascending: false });
         const messages = messagesResult.data as any[];
 
         if (messages) {
+          // Collect unique user IDs and fetch their profiles in one batch
+          const userIds = new Set<string>();
+          for (const msg of messages) {
+            userIds.add(msg.sender_id);
+            userIds.add(msg.recipient_id);
+          }
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, full_name, avatar_url")
+            .in("id", Array.from(userIds));
+          const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
           const convMap = new Map();
           for (const msg of messages) {
             const otherId = msg.sender_id === session.user.id ? msg.recipient_id : msg.sender_id;
-            const otherProfile = msg.sender_id === session.user.id ? msg.recipient : msg.sender;
+            const otherProfile = profileMap.get(otherId);
             const otherName = otherProfile?.full_name;
             const otherAvatar = otherProfile?.avatar_url;
             const key = `${otherId}-${msg.listing_id}`;

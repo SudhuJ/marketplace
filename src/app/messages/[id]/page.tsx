@@ -6,6 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Send } from "lucide-react";
+import { Avatar } from "@/components/avatar";
 
 export default function ConversationPage() {
   const router = useRouter();
@@ -168,9 +169,7 @@ export default function ConversationPage() {
           <Button variant="ghost" onClick={() => router.back()} className="text-zinc-400 hover:text-zinc-200 p-0">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 text-sm font-medium">
-            {otherUser?.full_name?.[0] || "?"}
-          </div>
+          <Avatar src={otherUser?.avatar_url} size={8} />
           <div>
             <p className="text-zinc-200 font-medium">{otherUser?.full_name || "User"}</p>
             <p className="text-xs text-zinc-500">Re: {listing?.title || "Listing"}</p>

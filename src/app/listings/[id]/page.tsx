@@ -6,6 +6,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Heart, MessageCircle, ArrowLeft, Trash2, Edit3, CheckCircle, XCircle } from "lucide-react";
+import { Avatar } from "@/components/avatar";
 import {
   Dialog,
   DialogContent,
@@ -203,9 +204,7 @@ export default function ListingDetailPage() {
             <div className="border-t border-zinc-800 pt-6 mb-6">
               <h3 className="text-zinc-300 font-medium mb-3">Seller</h3>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-medium">
-                  {(seller?.full_name || "A")[0]}
-                </div>
+                <Avatar src={seller?.avatar_url} size={10} />
                 <div>
                   <p className="text-zinc-200">{seller?.full_name || "Anonymous"}</p>
                   {seller?.location && <p className="text-zinc-500 text-sm">{seller.location}</p>}

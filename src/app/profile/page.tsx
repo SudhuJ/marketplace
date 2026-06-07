@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Save, Heart, Package } from "lucide-react";
+import { Avatar } from "@/components/avatar";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [location, setLocation] = useState("");
   const [website, setWebsite] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [tab, setTab] = useState<"listings" | "favorites">("listings");
   const [loading, setLoading] = useState(true);
 
@@ -67,16 +70,36 @@ export default function ProfilePage() {
 
   const saveProfile = async () => {
     setSaving(true);
+    let avatarUrl = profile?.avatar_url;
+
+    if (avatarFile) {
+      setUploadingAvatar(true);
+      const ext = avatarFile.name.split(".").pop();
+      const path = `${user.id}/avatar.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, avatarFile, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(path);
+      avatarUrl = publicUrl;
+      setUploadingAvatar(false);
+    }
+
     await supabase.from("profiles").upsert({
       id: user.id,
       full_name: fullName,
       bio,
       location,
       website,
+      avatar_url: avatarUrl,
       updated_at: new Date().toISOString(),
     });
+    setProfile((prev: any) => ({ ...prev, avatar_url: avatarUrl }));
     setSaving(false);
     setEditing(false);
+    setAvatarFile(null);
   };
 
   if (loading) {
@@ -105,9 +128,7 @@ export default function ProfilePage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center text-2xl text-zinc-200 font-bold">
-                  {(profile?.full_name || user?.email?.[0] || "U").toUpperCase()}
-                </div>
+                <Avatar src={profile?.avatar_url} size={16} />
                 <div>
                   <CardTitle className="text-zinc-100 text-xl">{profile?.full_name || "Unnamed User"}</CardTitle>
                   <p className="text-zinc-500 text-sm">{user?.email}</p>
@@ -121,6 +142,24 @@ export default function ProfilePage() {
           <CardContent>
             {editing ? (
               <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <label className="relative cursor-pointer group">
+                    <Avatar src={avatarFile ? URL.createObjectURL(avatarFile) : profile?.avatar_url} size={16} />
+                    <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-xs text-zinc-200 font-medium">Change</span>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => setAvatarFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                  <div>
+                    <p className="text-zinc-300 text-sm font-medium">{user?.email}</p>
+                    <p className="text-zinc-500 text-xs">Click avatar to change photo</p>
+                  </div>
+                </div>
                 <div>
                   <label className="block text-sm text-zinc-400 mb-1">Full Name</label>
                   <Input value={fullName} onChange={e => setFullName(e.target.value)} className="bg-zinc-800 border-zinc-700 text-zinc-200" />

@@ -5,6 +5,7 @@ import { supabase, clearSupabaseAuth } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MessageCircle } from "lucide-react";
+import { Avatar } from "@/components/avatar";
 
 export default function MessagesPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function MessagesPage() {
         // Get all messages grouped by the other participant
         const { data: messages } = await supabase
           .from("messages")
-          .select("*, listings(id, title), sender:profiles!sender_id(full_name), recipient:profiles!recipient_id(full_name)")
+          .select("*, listings(id, title), sender:profiles!sender_id(full_name, avatar_url), recipient:profiles!recipient_id(full_name, avatar_url)")
           .or(`sender_id.eq.${session.user.id},recipient_id.eq.${session.user.id}`)
           .order("created_at", { ascending: false });
 
@@ -30,14 +31,15 @@ export default function MessagesPage() {
           const convMap = new Map();
           for (const msg of messages) {
             const otherId = msg.sender_id === session.user.id ? msg.recipient_id : msg.sender_id;
-            const otherName = msg.sender_id === session.user.id
-              ? msg.recipient?.full_name
-              : msg.sender?.full_name;
+            const otherProfile = msg.sender_id === session.user.id ? msg.recipient : msg.sender;
+            const otherName = otherProfile?.full_name;
+            const otherAvatar = otherProfile?.avatar_url;
             const key = `${otherId}-${msg.listing_id}`;
             if (!convMap.has(key)) {
               convMap.set(key, {
                 otherId,
                 otherName: otherName || "Unknown",
+                otherAvatar,
                 listingId: msg.listings?.id,
                 listingTitle: msg.listings?.title || "Unknown Listing",
                 lastMessage: msg.content,
@@ -90,9 +92,7 @@ export default function MessagesPage() {
                 onClick={() => router.push(`/messages/${conv.listingId}?other=${conv.otherId}`)}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-medium">
-                      {conv.otherName?.[0] || "?"}
-                    </div>
+                    <Avatar src={conv.otherAvatar} size={10} />
                     <div>
                       <p className="text-zinc-200 font-medium">{conv.otherName}</p>
                       <p className="text-zinc-500 text-sm">Re: {conv.listingTitle}</p>
